@@ -4,4 +4,4 @@ node_modules
 .vscode-test/
 *.vsix
 .vscode
-CHANGELOG.md
+# CHANGELOG.md

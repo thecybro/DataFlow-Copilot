@@ -59,6 +59,8 @@ export function activate(context: vscode.ExtensionContext) {
                     { enableScripts: true }
                 );
                 dagPanel.onDidDispose(() => { dagPanel = undefined; });
+
+                triggerAnalysis();
             }
         })
     );
@@ -86,6 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
                         const md = new vscode.MarkdownString();
                         md.isTrusted = true;
                         md.appendMarkdown(`### DataFlow Copilot\n`);
+                        md.appendMarkdown(`==============\n\n`)
                         md.appendMarkdown(`**Variable:** \`${match.variable}\`\n\n`);
                         md.appendMarkdown(`**Operation:** ${match.label}\n\n`);
                         md.appendMarkdown(`**Type:** \`${match.type}\`\n\n`);
@@ -209,8 +212,6 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
 
             const canvas = document.getElementById('c');
             const ctx = canvas.getContext('2d');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
 
             const colors = {
             source: '#4EC9B0',
@@ -218,35 +219,67 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             merge: '#C586C0'
             };
 
-            const nodeMap = {};
-            nodes.forEach((n, i) => { nodeMap[n.id] = n; });
-
-            const levelH = 110;
             const nodeW = 160;
             const nodeH = 50;
-            const startX = canvas.width / 2 - nodeW / 2;
-            const startY = 60;
+            const paddingX = 40;
+            const paddingY = 80;
 
-            nodes.forEach((n, i) => {
-            n.x = startX + (i % 3 - 1) * 200;
-            n.y = startY + i * levelH;
+            const nodeMap = {};
+            nodes.forEach(n => { nodeMap[n.id] = n; });
+
+            function assignDepths() {
+            const depth = {};
+            nodes.forEach(n => depth[n.id] = 0);
+
+            let changed = true;
+            while (changed) {
+                changed = false;
+                edges.forEach(e => {
+                const newDepth = (depth[e.from] || 0) + 1;
+                if (newDepth > (depth[e.to] || 0)) {
+                    depth[e.to] = newDepth;
+                    changed = true;
+                }
+                });
+            }
+            return depth;
+            }
+
+            function positionAllNodes() {
+            const depth = assignDepths();
+            const layers = {};
+
+            nodes.forEach(n => {
+                const d = depth[n.id] || 0;
+                if (!layers[d]) layers[d] = [];
+                layers[d].push(n);
             });
 
-            const positioned = new Set();
-            function positionNode(node, x, y) {
-            node.x = x;
-            node.y = y;
-            positioned.add(node.id);
-            const children = edges.filter(e => e.from === node.id).map(e => nodeMap[e.to]);
-            children.forEach((child, i) => {
-                if (!positioned.has(child.id)) {
-                positionNode(child, x + (i - (children.length-1)/2) * 220, y + levelH);
-                }
+            const numLayers = Object.keys(layers).length;
+            const maxPerLayer = Math.max(...Object.values(layers).map(l => l.length));
+            const totalH = numLayers * (nodeH + paddingY);
+            const totalW = maxPerLayer * (nodeW + paddingX);
+
+            const offsetY = Math.max(60, (canvas.height - totalH) / 2);
+
+            Object.entries(layers).forEach(([d, layerNodes]) => {
+                const layerW = layerNodes.length * (nodeW + paddingX) - paddingX;
+                const offsetX = (canvas.width - layerW) / 2;
+                layerNodes.forEach((n, i) => {
+                n.x = offsetX + i * (nodeW + paddingX);
+                n.y = offsetY + parseInt(d) * (nodeH + paddingY);
+                });
             });
             }
 
-            const roots = nodes.filter(n => !edges.some(e => e.to === n.id));
-            roots.forEach((r, i) => positionNode(r, 100 + i * 250, 60));
+            function truncate(text, maxWidth) {
+                let t = String(text);
+                if (ctx.measureText(t).width <= maxWidth) return t;
+                while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
+                    t = t.slice(0, -1);
+                }
+                return t + '...';
+                }
 
             function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -254,15 +287,16 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             edges.forEach(e => {
                 const from = nodeMap[e.from];
                 const to = nodeMap[e.to];
-                if (!from || !to) return;
+                if (!from || !to || from.x === undefined || to.x === undefined) return;
+
                 ctx.beginPath();
-                ctx.moveTo(from.x + nodeW/2, from.y + nodeH);
-                ctx.lineTo(to.x + nodeW/2, to.y);
+                ctx.moveTo(from.x + nodeW / 2, from.y + nodeH);
+                ctx.lineTo(to.x + nodeW / 2, to.y);
                 ctx.strokeStyle = '#555';
                 ctx.lineWidth = 2;
                 ctx.stroke();
 
-                const ax = to.x + nodeW/2;
+                const ax = to.x + nodeW / 2;
                 const ay = to.y;
                 ctx.beginPath();
                 ctx.moveTo(ax, ay);
@@ -273,7 +307,9 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             });
 
             nodes.forEach(n => {
+                if (n.x === undefined) return;
                 const color = colors[n.type] || '#888';
+
                 ctx.beginPath();
                 ctx.roundRect(n.x, n.y, nodeW, nodeH, 8);
                 ctx.fillStyle = '#2d2d2d';
@@ -284,11 +320,11 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
 
                 ctx.fillStyle = color;
                 ctx.font = 'bold 13px monospace';
-                ctx.fillText(n.label, n.x + 10, n.y + 20);
+                ctx.fillText(truncate(n.label, nodeW - 20), n.x + 10, n.y + 20);
 
                 ctx.fillStyle = '#888';
                 ctx.font = '11px monospace';
-                ctx.fillText(n.operation, n.x + 10, n.y + 38);
+                ctx.fillText(truncate(n.operation, nodeW - 20), n.x + 10, n.y + 38);
 
                 ctx.fillStyle = '#555';
                 ctx.font = '10px monospace';
@@ -296,16 +332,24 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             });
             }
 
+            function init() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            positionAllNodes();
             draw();
+            }
+
             window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
+            positionAllNodes();
             draw();
             });
+
+            init();
             </script>
             </body>
-            </html>
-            `;
+            </html>`;
             }
 
 export function deactivate() {}
