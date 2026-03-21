@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import * as path from 'path';
-
+// >>
 interface AnalysisResult {
     line: number;
     label: string;
@@ -35,7 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     const decorator = vscode.window.createTextEditorDecorationType({
         after: {
             margin: '0 0 0 2em',
-            color: '#4EC9B0',
+            color: '#4ec9b05d',
             fontStyle: 'italic'
         }
     });
@@ -46,6 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusBar);
 
     let dagPanel: vscode.WebviewPanel | undefined;
+    let lastOutput: AnalysisOutput | undefined; 
 
     context.subscriptions.push(
         vscode.commands.registerCommand('dataflow-copilot.showDag', () => {
@@ -60,7 +61,12 @@ export function activate(context: vscode.ExtensionContext) {
                 );
                 dagPanel.onDidDispose(() => { dagPanel = undefined; });
 
-                triggerAnalysis();
+                if (lastOutput) {
+                    dagPanel.webview.html = buildDagHtml(lastOutput.nodes, lastOutput.edges);
+                }
+                else {
+                    triggerAnalysis();
+                }
             }
         })
     );
@@ -88,7 +94,6 @@ export function activate(context: vscode.ExtensionContext) {
                         const md = new vscode.MarkdownString();
                         md.isTrusted = true;
                         md.appendMarkdown(`### DataFlow Copilot\n`);
-                        md.appendMarkdown(`==============\n\n`)
                         md.appendMarkdown(`**Variable:** \`${match.variable}\`\n\n`);
                         md.appendMarkdown(`**Operation:** ${match.label}\n\n`);
                         md.appendMarkdown(`**Type:** \`${match.type}\`\n\n`);
@@ -131,6 +136,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             try {
                 const output: AnalysisOutput = JSON.parse(stdout);
+                lastOutput = output;
                 applyDecorations(editor, decorator, output.results);
                 updateStatusBar(statusBar, output.results);
 
@@ -166,7 +172,7 @@ function updateStatusBar(statusBar: vscode.StatusBarItem, results: AnalysisResul
     }
     const dfCount = results.filter(r => r.label === 'DataFrame created').length;
     const opCount = results.filter(r => r.label !== 'DataFrame created').length;
-    statusBar.text = `>> ${dfCount} dataframe${dfCount !== 1 ? 's' : ''} · ${opCount} operation${opCount !== 1 ? 's' : ''}`;
+    statusBar.text = `>> ${dfCount} Dataframe${dfCount !== 1 ? 's' : ''} · ${opCount} Operation${opCount !== 1 ? 's' : ''}`;
     console.log('Status bar update:', statusBar.text);
     statusBar.show();
 }
@@ -227,10 +233,40 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             const nodeMap = {};
             nodes.forEach(n => { nodeMap[n.id] = n; });
 
+            let selectedId = null;
+
+            function getConnectedIds(id) {
+            const connected = new Set();
+            connected.add(id);
+
+            // for upstream
+            function walkUp(nid) {
+                edges.filter(e => e.to === nid).forEach(e => {
+                if (!connected.has(e.from)) {
+                    connected.add(e.from);
+                    walkUp(e.from);
+                }
+                });
+            }
+
+            // for downstream
+            function walkDown(nid) {
+                edges.filter(e => e.from === nid).forEach(e => {
+                if (!connected.has(e.to)) {
+                    connected.add(e.to);
+                    walkDown(e.to);
+                }
+                });
+            }
+
+            walkUp(id);
+            walkDown(id);
+            return connected;
+            }
+
             function assignDepths() {
             const depth = {};
             nodes.forEach(n => depth[n.id] = 0);
-
             let changed = true;
             while (changed) {
                 changed = false;
@@ -248,7 +284,6 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             function positionAllNodes() {
             const depth = assignDepths();
             const layers = {};
-
             nodes.forEach(n => {
                 const d = depth[n.id] || 0;
                 if (!layers[d]) layers[d] = [];
@@ -256,10 +291,7 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             });
 
             const numLayers = Object.keys(layers).length;
-            const maxPerLayer = Math.max(...Object.values(layers).map(l => l.length));
             const totalH = numLayers * (nodeH + paddingY);
-            const totalW = maxPerLayer * (nodeW + paddingX);
-
             const offsetY = Math.max(60, (canvas.height - totalH) / 2);
 
             Object.entries(layers).forEach(([d, layerNodes]) => {
@@ -273,27 +305,32 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
             }
 
             function truncate(text, maxWidth) {
-                let t = String(text);
-                if (ctx.measureText(t).width <= maxWidth) return t;
-                while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
-                    t = t.slice(0, -1);
-                }
-                return t + '...';
-                }
+            let t = String(text);
+            if (ctx.measureText(t).width <= maxWidth) return t;
+            while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
+                t = t.slice(0, -1);
+            }
+            return t + '...';
+            }
 
             function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const connected = selectedId ? getConnectedIds(selectedId) : null;
 
             edges.forEach(e => {
                 const from = nodeMap[e.from];
                 const to = nodeMap[e.to];
                 if (!from || !to || from.x === undefined || to.x === undefined) return;
 
+                const isHighlighted = connected &&
+                connected.has(e.from) && connected.has(e.to);
+
                 ctx.beginPath();
                 ctx.moveTo(from.x + nodeW / 2, from.y + nodeH);
                 ctx.lineTo(to.x + nodeW / 2, to.y);
-                ctx.strokeStyle = '#555';
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = isHighlighted ? '#aaa' : (connected ? '#2a2a2a' : '#555');
+                ctx.lineWidth = isHighlighted ? 2.5 : 1.5;
                 ctx.stroke();
 
                 const ax = to.x + nodeW / 2;
@@ -302,35 +339,74 @@ function buildDagHtml(nodes: DagNode[], edges: DagEdge[]): string {
                 ctx.moveTo(ax, ay);
                 ctx.lineTo(ax - 6, ay - 10);
                 ctx.lineTo(ax + 6, ay - 10);
-                ctx.fillStyle = '#555';
+                ctx.fillStyle = isHighlighted ? '#aaa' : (connected ? '#2a2a2a' : '#555');
                 ctx.fill();
             });
 
             nodes.forEach(n => {
                 if (n.x === undefined) return;
+
+                const isSelected = n.id === selectedId;
+                const isConnected = connected && connected.has(n.id);
+                const isDimmed = connected && !isConnected;
+
                 const color = colors[n.type] || '#888';
+                const borderColor = isSelected ? '#fff' : (isDimmed ? '#333' : color);
+                const bgColor = isSelected ? '#3a3a3a' : (isDimmed ? '#1a1a1a' : '#2d2d2d');
+                const textColor = isDimmed ? '#444' : color;
+                const subTextColor = isDimmed ? '#333' : '#888';
 
                 ctx.beginPath();
                 ctx.roundRect(n.x, n.y, nodeW, nodeH, 8);
-                ctx.fillStyle = '#2d2d2d';
+                ctx.fillStyle = bgColor;
                 ctx.fill();
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = borderColor;
+                ctx.lineWidth = isSelected ? 2.5 : 1.5;
                 ctx.stroke();
 
-                ctx.fillStyle = color;
+                ctx.fillStyle = textColor;
                 ctx.font = 'bold 13px monospace';
                 ctx.fillText(truncate(n.label, nodeW - 20), n.x + 10, n.y + 20);
 
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = subTextColor;
                 ctx.font = '11px monospace';
                 ctx.fillText(truncate(n.operation, nodeW - 20), n.x + 10, n.y + 38);
 
-                ctx.fillStyle = '#555';
+                ctx.fillStyle = isDimmed ? '#333' : '#555';
                 ctx.font = '10px monospace';
                 ctx.fillText('line ' + n.line, n.x + nodeW - 45, n.y + 44);
             });
             }
+
+            function getNodeAt(x, y) {
+            return nodes.find(n =>
+                n.x !== undefined &&
+                x >= n.x && x <= n.x + nodeW &&
+                y >= n.y && y <= n.y + nodeH
+            );
+            }
+
+            canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const node = getNodeAt(x, y);
+
+            if (node) {
+                selectedId = selectedId === node.id ? null : node.id;
+            } else {
+                selectedId = null;
+            }
+            draw();
+            });
+
+            canvas.style.cursor = 'default';
+            canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            canvas.style.cursor = getNodeAt(x, y) ? 'pointer' : 'default';
+            });
 
             function init() {
             canvas.width = window.innerWidth;

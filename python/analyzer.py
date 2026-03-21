@@ -56,7 +56,7 @@ class DataFrameVisitor(ast.NodeVisitor):
                 inputs = self._get_receiver(call)
 
             elif func_name and 'merge' in func_name:
-                label = "Merge"
+                label = "Merged"
                 node_type = "merge"
                 inputs = self._get_merge_inputs(call)
 
@@ -123,11 +123,21 @@ class DataFrameVisitor(ast.NodeVisitor):
         return []
 
     def _get_merge_inputs(self, call):
-        inputs = self._get_receiver(call)
-        if isinstance(call.func, ast.Name) and call.args:
+        inputs = []
+
+        if isinstance(call.func, ast.Attribute):
+            # For df.merge(other) style merges
+            if isinstance(call.func.value, ast.Name):
+                inputs.append(call.func.value.id)
+            if call.args and isinstance(call.args[0], ast.Name):
+                inputs.append(call.args[0].id)
+
+        elif isinstance(call.func, ast.Name):
+        # For pd.merge(left, right) style merges
             for arg in call.args[:2]:
                 if isinstance(arg, ast.Name):
                     inputs.append(arg.id)
+
         return inputs
 
 if __name__ == '__main__':

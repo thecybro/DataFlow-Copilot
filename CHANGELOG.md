@@ -13,3 +13,11 @@
 ### Added
 - Improved DAG panel flow graph rendering
 - Added previews of the extension
+
+## [0.0.3] - 2026-03-20
+
+### Added
+- Improved DAG panel flow graph rendering
+- Improved DAG panel to show dataflow more accurately
+- Decreased the opacity of inline messages
+- Updated previews of the extension
