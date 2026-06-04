@@ -2,7 +2,7 @@
   "name": "dataflow-copilot",
   "displayName": "DataFlow-Copilot",
   "description": "Dataframe shape tracking for Python",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.109.0"
   },
