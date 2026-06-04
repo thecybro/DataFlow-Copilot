@@ -1,175 +1,209 @@
 # DataFlow Copilot
 
-**Static dataflow analysis for pandas. See your pipeline's logic without running a single line of code.**
+**A VS Code extension for tracing pandas dataframe flow without running your script.**
 
-[![Version](https://img.shields.io/badge/version-0.1.0--alpha-blue.svg)](https://github.com/Revguard/DataFlow-Copilot)
+[![Version](https://img.shields.io/badge/version-0.0.4-blue.svg)](https://github.com/Revguard/DataFlow-Copilot)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![VSCode](https://img.shields.io/badge/vscode-1.109%2B-blue.svg)
 
 ---
 
-## What is this?
+## What It Does
 
-If you've ever scrolled through a 300-line pandas script and lost track of which dataframe is which, or wondered what your data looks like after five chained operations, **DataFlow Copilot** is for you.
+DataFlow Copilot reads Python files with AST parsing and looks for common pandas dataframe operations. It does not execute your code, load datasets, import your project, or send anything anywhere.
 
-It reads your Python file using **AST (Abstract Syntax Tree)** parsing — no code execution, no runtime, no waiting for datasets to load. It annotates your editor inline, shows a live summary in the status bar, renders a visual flow graph of how your dataframes connect, and gives you rich hover tooltips on every operation.
+The goal is simple: when a pandas script gets long enough that `df`, `cleaned`, `merged`, and `summary` all start blurring together, the extension gives you a map.
 
-**Why static analysis?**
-- **Zero runtime overhead:** Works instantly on any file size
-- **Privacy first:** Your data never leaves your machine
-- No dependencies to install in your project
-- Annotations update as you type, not after you run
+It currently adds:
+
+- Inline annotations next to detected pandas operations
+- A status bar count of dataframe sources and operations
+- Hover details for each detected operation
+- An interactive DAG panel showing how dataframes feed into each other
+
+It is most useful for scripts where important dataframe steps are assigned to variables:
+
+```python
+accounts = pd.read_csv("accounts.csv")
+tickets = pd.read_csv("tickets.csv")
+merged = pd.merge(accounts, tickets, on="account_id")
+clean = merged.dropna()
+summary = clean.groupby("team", as_index=False).count()
+```
 
 ---
 
 ## Installation
 
-> **Requires:** Python 3.8+ and VSCode 1.109+
+> Requires Python 3.8+ and VS Code 1.109+
 
-### Option 1: Install from .vsix file
+### Install From a `.vsix`
 
-1. Download `dataflow-copilot-0.0.1.vsix` from the [releases page](https://github.com/Revguard/DataFlow-Copilot/releases)
-2. Open VSCode
-3. Press `Ctrl+Shift+P` to open the command palette
-4. Type `Extensions: Install from VSIX` and select it
-5. Navigate to the downloaded `.vsix` file and open it
-6. Reload VSCode when prompted
+1. Download the latest `.vsix` from the [releases page](https://github.com/Revguard/DataFlow-Copilot/releases)
+2. Open VS Code
+3. Run `Extensions: Install from VSIX...` from the command palette
+4. Pick the downloaded file
+5. Reload VS Code if prompted
 
-### Option 2: Install from terminal
+### Install From Terminal
 
 ```bash
-# This option might not work sometimes
-code --install-extension dataflow-copilot-0.0.1.vsix
+code --install-extension dataflow-copilot-0.0.4.vsix
 ```
 
-### Verify it's working
-
-Open any `.py` file that uses pandas. Within a second you should see `>> DataFrame created` annotations appear to the right of your `pd.read_csv()` lines and a counter in the bottom-right status bar.
+The extension tries `python`, then `python3`, then `py -3` when it needs to run the local analyzer.
 
 ---
 
-## Quick start
+## Quick Start
+
+Open a Python file with pandas code:
 
 ```python
 import pandas as pd
 
-df     = pd.read_csv("accounts.csv")       # >> DataFrame created
-df2    = pd.read_csv("tickets.csv")        # >> DataFrame created
-merged = pd.merge(df, df2, on="id")        # >> Merge
-clean  = merged.dropna()                   # >> Null rows dropped
-filled = clean.fillna(0)                   # >> Nulls filled
+accounts = pd.read_csv("accounts.csv")      # >> DataFrame created
+tickets = pd.read_csv("tickets.csv")        # >> DataFrame created
+merged = pd.merge(accounts, tickets, on="id") # >> Merged
+clean = merged.dropna()                     # >> Null rows dropped
+filled = clean.fillna(0)                    # >> Nulls filled
 ```
 
-1. Open any `.py` file with pandas: annotations appear automatically
-2. Check the bottom-right status bar: `>> 2 dataframes · 3 operations`
-3. Click the status bar item or press `Ctrl+Shift+P` → `DataFlow: Show DAG Panel` to open the flow graph
-4. Hover over any pandas line to see a detailed tooltip
+After a short pause, you should see:
 
-That's it. Nothing to configure.
+- Inline labels at the end of supported pandas lines
+- A status bar item like `>> 2 dataframes · 3 operations`
+- Hover cards with operation type, variable name, inputs, and line number
+- A DAG panel from `DataFlow: Show DAG Panel`
+
+No project setup is required.
 
 ---
 
-## Features
+## DAG Panel
 
-### Inline Annotations
+The DAG panel is the main view for understanding a larger pipeline. It draws one node per detected dataframe-producing step and connects nodes when an operation uses an earlier dataframe.
 
-Every pandas operation gets a label on the right side of the line, right where you're already looking. No popups, no interruptions.
-
----
-
-### Status Bar Summary
-
-Live count of dataframes and operations in the current file, always visible in the bottom-right corner. Click it to open the DAG panel instantly.
-
-```
->> 2 dataframes · 3 operations
-```
-
----
-
-### DAG Sidebar Panel
-
-A visual flow graph showing how data moves through your script, color-coded by operation type.
+Node colors:
 
 | Color | Meaning |
 |---|---|
-| 🟢 Teal | Source dataframes (`read_csv`, `read_excel`, `pd.DataFrame`, etc.) |
-| 🔵 Blue | Transforms (`dropna`, `fillna`, `rename`, `groupby`, `drop`) |
-| 🟣 Purple | Merge and concat operations |
+| Teal | Dataframe sources such as `read_csv`, `read_excel`, `read_json`, and `pd.DataFrame` |
+| Blue | Transform steps such as `dropna`, `fillna`, `rename`, `drop`, and `groupby` |
+| Purple | Combining steps such as `merge` and `concat` |
 
-**Tips:**
-- Click any node to highlight its full upstream and downstream path, everything unrelated dims out
-- Click the same node again or click empty space to deselect
-- Resize the panel freely: The graph recenters automatically
+What you can do in the panel:
 
----
+- Drag to pan around the graph
+- Use the mouse wheel to zoom
+- Click `Fit` to bring the whole graph back into view
+- Click a node to highlight its upstream and downstream lineage
+- Click the same node again, empty space, or `Reset` to clear the selection
+- Resize the panel; the canvas redraws itself for the new space
 
-### Hover Tooltips
-
-Hover over any pandas line to see:
-
-- Variable name
-- Operation type
-- Operation category (source / transform / merge)
-- Input dataframes that fed into this operation
-- Line number
+The graph is rendered as a long-lived canvas view. It updates in place as analysis results change, and it only draws visible nodes and edges while you pan and zoom. That keeps it usable on bigger scripts instead of rebuilding the whole panel every time.
 
 ---
 
-## Supported operations
+## Supported Patterns
 
-| Category | Operations |
+DataFlow Copilot is intentionally conservative. It tracks patterns that are common, readable, and useful in real pandas scripts.
+
+| Category | Examples |
 |---|---|
-| **Ingestion** | `read_csv`, `read_excel`, `read_json`, `pd.DataFrame()` |
-| **Cleaning** | `dropna`, `fillna`, `drop`, `rename` |
-| **Analysis** | `groupby` |
-| **Combining** | `merge`, `concat` |
+| Sources | `pd.read_csv(...)`, `pd.read_excel(...)`, `pd.read_json(...)`, `pd.DataFrame(...)` |
+| Cleaning | `df.dropna()`, `df.fillna(...)`, `df.drop(...)`, `df.rename(...)` |
+| Grouping | `df.groupby(...).count()`, `df.groupby(...).sum()` when assigned to a variable |
+| Combining | `pd.merge(left, right, ...)`, `left.merge(right, ...)`, `pd.concat([a, b, c])` |
+| Reassignment | `df = df.fillna(...)`, `df = df.rename(...)`, `df = df.dropna()` |
+
+The analyzer understands normal pandas aliases:
+
+```python
+import pandas as pd
+import pandas
+```
+
+It also analyzes the live editor buffer, so unsaved changes can show up after the normal typing pause.
+
+---
+
+## What It Does Not Do
+
+This is static analysis, so there are limits.
+
+- It does not run your code.
+- It does not know row counts, column counts, schemas, or actual values.
+- It does not follow runtime control flow through loops, functions, comprehensions, `eval`, or `exec`.
+- It does not fully model long one-line method chains such as `df.dropna().rename(...).fillna(...)`.
+- It does not track dataframes through every possible Python expression.
+- It is focused on pandas, not Polars, Spark, sklearn, or SQL engines.
+
+For best results, assign meaningful steps to variables:
+
+```python
+clean = raw.dropna()
+renamed = clean.rename(columns={"id": "account_id"})
+summary = renamed.groupby("team", as_index=False).count()
+```
+
+That style is easier for people to review and easier for the extension to map.
 
 ---
 
 ## Troubleshooting
 
-**No annotations showing up**
+**No annotations show up**
 
-Make sure `python` is accessible from your terminal. Run `python --version`, if that fails, Python isn't on your PATH. On some systems you may need `python3` instead; if so, let us know via an issue and we'll add a setting for it.
+Make sure the file is detected as Python and contains supported pandas operations assigned to variables. The extension runs the analyzer with `python`, `python3`, or `py -3`, so at least one of those should be available on your PATH.
 
-**DAG panel is blank**
+**The DAG panel is empty**
 
-Click somewhere in your `.py` file to trigger a re-analysis, or close and reopen the panel. If it's still blank, check that your file has valid pandas operations assigned to variables (e.g. `df = pd.read_csv(...)`).
+The current file may not have any supported dataframe operations, or the analyzer may not have run yet. Click back into the Python editor and wait for the typing pause, then open `DataFlow: Show DAG Panel` again.
 
-**Annotations disappeared after editing**
+**The graph is huge**
 
-They re-appear after an 800ms pause in typing. This is intentional to avoid flickering while you type.
+Use `Fit`, zoom out, then click the part of the graph you care about. Selecting a node dims unrelated paths so you can follow one lineage through a large script.
+
+**A pandas line is not detected**
+
+It may be outside the supported patterns. Try assigning the operation to a variable and breaking long chains into separate steps.
 
 ---
 
-## Known limitations
+## Development
 
-Since this is a static analysis tool, there are real trade-offs:
+```bash
+npm install
+npm run compile
+npm run lint
+```
 
-- **Dynamic code:** Dataframes built inside loops, list comprehensions, or via `exec()` are not tracked
-- **Method chaining:** `df.dropna().rename().fillna()` on a single line is not yet fully supported; assign each step to a variable for full tracking
-- **Shape inference:** Row and column counts require running the code; we show operation type, not dimensions
-- **Pandas only:** Polars, sklearn, and other libraries are not yet supported
+To run the analyzer directly:
+
+```bash
+python3 python/analyzer.py test.py
+```
+
+`test.py` is intentionally a large, busy pandas pipeline. It is there so the extension has something realistic to chew on while you test annotations, hovers, status counts, and the DAG.
 
 ---
 
 ## Roadmap
 
-- [ ] Method chaining support
-- [ ] Zoom and pan in the DAG panel
-- [ ] Curved edge routing in the DAG
-- [ ] Polars support
-- [ ] Optional runtime hook for exact shape inference
-- [ ] Export DAG as SVG or PNG
+- Better support for multi-step method chains
+- Search and jump-to-node inside the DAG
+- Export DAG as SVG or PNG
+- Optional runtime mode for exact shapes and columns
+- Polars support
 
 ---
 
-## Built by
+## Built By
 
-Built by **Cybro** to stop the headache of tracing dataflow in large Python projects. We needed this ourselves, so we built it in the open.
+Built by **Cybro** to make pandas scripts easier to reason about before you run them.
 
 Found a bug or have a feature request? [Open an issue](https://github.com/Revguard/DataFlow-Copilot/issues) or reach out on [Twitter/X](https://x.com/@The_Cybro).
 
-This is early software and we're actively improving it.
+This is still early software, but the goal is steady: make dataframe-heavy Python files easier to read, review, and trust.
