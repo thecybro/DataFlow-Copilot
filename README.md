@@ -40,7 +40,7 @@ summary = clean.groupby("team", as_index=False).count()
 
 ### Install From a `.vsix`
 
-1. Download the latest `.vsix` from the [releases page](https://github.com/Revguard/DataFlow-Copilot/releases)
+1. Download `dataflow-copilot-0.0.4.vsix` from the [latest GitHub release](https://github.com/Revguard/DataFlow-Copilot/releases/latest)
 2. Open VS Code
 3. Run `Extensions: Install from VSIX...` from the command palette
 4. Pick the downloaded file
@@ -50,6 +50,12 @@ summary = clean.groupby("team", as_index=False).count()
 
 ```bash
 code --install-extension dataflow-copilot-0.0.4.vsix
+```
+
+You can also download this release directly once the VSIX is attached to GitHub Releases:
+
+```text
+https://github.com/Revguard/DataFlow-Copilot/releases/download/v0.0.4/dataflow-copilot-0.0.4.vsix
 ```
 
 The extension tries `python`, then `python3`, then `py -3` when it needs to run the local analyzer.
